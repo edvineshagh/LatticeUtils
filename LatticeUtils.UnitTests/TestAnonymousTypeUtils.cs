@@ -1,4 +1,5 @@
-﻿using NUnit.Framework;
+﻿using System.Diagnostics;
+using NUnit.Framework;
 using System;
 using System.Collections.Generic;
 using System.Dynamic;
@@ -11,6 +12,12 @@ namespace LatticeUtils.UnitTests
 {
     public class TestAnonymousTypeUtils
     {
+
+        public interface ITestClass { int Val { get; } }
+
+        public class TestClass { public virtual int Val { get { return 0; } } }
+
+
         [Test]
         public void CreateType_SameTypeTwice()
         {
@@ -77,6 +84,27 @@ namespace LatticeUtils.UnitTests
             }
 
             Assert.AreEqual(expectedTypeName, anonymousType.Name);
+        }
+
+        [TestCase(true)]
+        [TestCase(false)]
+        public void CreateInheritedClass(bool isMutable)
+        {
+            var typeNames = new[] { "b", "a" };
+
+            Type[] interfaceTypes = new Type[] { typeof(ITestClass) };
+            Type parentType = typeof(TestClass);
+
+            Type anonymousGenericTypeDefinition = 
+                isMutable 
+                ? AnonymousTypeUtils.CreateMutableGenericTypeDefinition(typeNames, parentType, interfaceTypes)
+                : anonymousGenericTypeDefinition = AnonymousTypeUtils.CreateGenericTypeDefinition(typeNames, parentType, interfaceTypes);
+
+            if (!anonymousGenericTypeDefinition.IsSubclassOf(parentType))
+                Debugger.Launch();
+            Assert.IsTrue(anonymousGenericTypeDefinition.IsSubclassOf(parentType));
+            
+            Assert.IsTrue(anonymousGenericTypeDefinition.GetInterface(interfaceTypes.First().Name) != null);
         }
 
         [TestCase(true)]

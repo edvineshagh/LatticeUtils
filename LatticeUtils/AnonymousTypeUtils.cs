@@ -10,6 +10,7 @@ using System.Text;
 
 namespace LatticeUtils
 {
+
     /// <summary>
     /// Methods for creating anonymous type dynamically.
     /// </summary>
@@ -41,11 +42,13 @@ namespace LatticeUtils
         /// Creates an anonymous object for the specified name/value pairs.
         /// </summary>
         /// <param name="valueDictionary">mappings of property names to values</param>
+        /// <param name="parentType">Parent class to inherit from</param>
+        /// <param name="interfaces">Interfaces to implement</param>
         /// <returns>the anonymous object</returns>
-        public static object CreateObject(IDictionary<string, object> valueDictionary)
+        public static object CreateObject(IDictionary<string, object> valueDictionary, Type parentType = null, Type[] interfaces = null)
         {
             var typeDictionary = valueDictionary.ToDictionary(kv => kv.Key, kv => kv.Value != null ? kv.Value.GetType() : typeof(object));
-            var anonymousType = AnonymousTypeUtils.CreateType(typeDictionary);
+            var anonymousType = AnonymousTypeUtils.CreateType(typeDictionary, parentType, interfaces);
             return CreateObject(valueDictionary, anonymousType);
         }
 
@@ -71,10 +74,13 @@ namespace LatticeUtils
         /// Creates an anonymous type for the specified property name/type pairs.
         /// </summary>
         /// <param name="typePairs">mappings of property names to types</param>
+        /// <param name="parentType">Parent class to inherit from</param>
+        /// <param name="interfaces">Interfaces to implement</param>
+        ///
         /// <returns>the anonymous type</returns>
-        public static Type CreateType(IEnumerable<KeyValuePair<string, Type>> typePairs)
+        public static Type CreateType(IEnumerable<KeyValuePair<string, Type>> typePairs, Type parentType = null, Type[] interfaces = null)
         {
-            return CreateType(typePairs, isMutable: false);
+            return CreateType(typePairs, isMutable: false, parentType: parentType, interfaces: interfaces);
         }
 
         /// <summary>
@@ -84,18 +90,21 @@ namespace LatticeUtils
         /// This will create a version of an anonymous type in which all of the properties have setters.
         /// </remarks>
         /// <param name="typePairs">mappings of property names to types</param>
+        /// <paramref name="isMutable"/>
+        ///  <param name="parentType">Parent class to inherit from</param>
+        /// <param name="interfaces">Interfaces to implement</param>
         /// <returns>the mutable anonymous type</returns>
-        public static Type CreateMutableType(IEnumerable<KeyValuePair<string, Type>> typePairs)
+        public static Type CreateMutableType(IEnumerable<KeyValuePair<string, Type>> typePairs, Type parentType = null, Type[] interfaces = null)
         {
-            return CreateType(typePairs, isMutable: true);
+            return CreateType(typePairs, isMutable: true, parentType: parentType, interfaces: interfaces);
         }
 
-        private static Type CreateType(IEnumerable<KeyValuePair<string, Type>> typePairs, bool isMutable)
+        private static Type CreateType(IEnumerable<KeyValuePair<string, Type>> typePairs, bool isMutable, Type parentType, Type[] interfaces)
         {
             if (typePairs == null) throw new ArgumentNullException("typePairs");
 
             var propertyNames = typePairs.Select(pair => pair.Key);
-            var genericTypeDefinition = GetOrCreateGenericTypeDefinition(propertyNames.ToList(), isMutable: isMutable);
+            var genericTypeDefinition = GetOrCreateGenericTypeDefinition(propertyNames.ToList(), isMutable: isMutable, parentType: parentType, interfaces: interfaces);
 
             var propertyTypes = typePairs.Select(pair => pair.Value);
             return genericTypeDefinition.MakeGenericType(propertyTypes.ToArray());
@@ -105,11 +114,13 @@ namespace LatticeUtils
         /// Creates an anonymous generic type definition for the specified property names.
         /// </summary>
         /// <param name="propertyNames">the property names</param>
+        /// <param name="parentType">Parent class to inherit from</param>
+        /// <param name="interfaces">Interfaces to implement</param>
         /// <returns>the anonymous generic type definition</returns>
-        public static Type CreateGenericTypeDefinition(IEnumerable<string> propertyNames)
+        public static Type CreateGenericTypeDefinition(IEnumerable<string> propertyNames, Type parentType = null, Type[] interfaces = null)
         {
             if (propertyNames == null) throw new ArgumentNullException("propertyNames");
-            return GetOrCreateGenericTypeDefinition(propertyNames.ToList(), isMutable: false);
+            return GetOrCreateGenericTypeDefinition(propertyNames.ToList(), isMutable: false, parentType: parentType, interfaces: interfaces);
         }
 
         /// <summary>
@@ -119,14 +130,17 @@ namespace LatticeUtils
         /// This will create a version of an anonymous type in which all of the properties have setters.
         /// </remarks>
         /// <param name="propertyNames">the property names</param>
+        /// <param name="parentType">Parent class to inherit from</param>
+        /// <param name="interfaces">Interfaces to implement</param>
         /// <returns>the mutable anonymous generic type definition</returns>
-        public static Type CreateMutableGenericTypeDefinition(IEnumerable<string> propertyNames)
+        public static Type CreateMutableGenericTypeDefinition(IEnumerable<string> propertyNames, Type parentType = null, Type[] interfaces = null)
         {
             if (propertyNames == null) throw new ArgumentNullException("propertyNames");
-            return GetOrCreateGenericTypeDefinition(propertyNames.ToList(), isMutable: true);
+            return GetOrCreateGenericTypeDefinition(propertyNames.ToList(), isMutable: true, parentType: parentType, interfaces: interfaces);
         }
 
-        private static Type GetOrCreateGenericTypeDefinition(ICollection<string> propertyNames, bool isMutable)
+
+        private static Type GetOrCreateGenericTypeDefinition(ICollection<string> propertyNames, bool isMutable = false, Type parentType = null, Type[] interfaces = null)
         {
             if (!propertyNames.Any()) throw new ArgumentOutOfRangeException("propertyNames", propertyNames.Count, "At least one property name is required to create an anonymous type");
 
@@ -167,19 +181,26 @@ namespace LatticeUtils
                 genericTypeDefinition = moduleBuilder.GetType(genericTypeDefinitionName);
                 if (genericTypeDefinition == null)
                 {
-                    genericTypeDefinition = CreateGenericTypeDefinitionNoLock(genericTypeDefinitionName, propertyNames, isMutable: isMutable);
+                    genericTypeDefinition = CreateGenericTypeDefinitionNoLock(
+                        genericTypeDefinitionName,
+                        propertyNames,
+                        isMutable: isMutable,
+                        parentType: parentType,
+                        interfaces: interfaces);
                 }
             }
             return genericTypeDefinition;
         }
 
-        private static Type CreateGenericTypeDefinitionNoLock(string genericTypeDefinitionName, ICollection<string> propertyNames, bool isMutable)
+        private static Type CreateGenericTypeDefinitionNoLock(string genericTypeDefinitionName, ICollection<string> propertyNames, bool isMutable, Type parentType = null, Type[] interfaces = null)
         {
             var typeBuilder = moduleBuilder.DefineType(genericTypeDefinitionName,
                 attr: TypeAttributes.Public | TypeAttributes.AutoLayout
                 | TypeAttributes.AnsiClass | TypeAttributes.Class
                 | TypeAttributes.Sealed | TypeAttributes.BeforeFieldInit
-            );
+                , parent: parentType
+                , interfaces: interfaces);
+
             var typeParameterNames = propertyNames
                 .Select(propertyName => string.Format("<{0}>j__TPar", propertyName))
                 .ToArray();
